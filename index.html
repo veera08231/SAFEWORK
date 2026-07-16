@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SAFEWORK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+
+    <div id="app-container">
+
+        <section id="login-screen" class="screen active">
+            <header class="app-header">
+                <h1>SAFEWORK</h1>
+                <p class="subtitle">Login to Continue</p>
+            </header>
+            <main class="form-content">
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" placeholder="Enter email" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" placeholder="Enter password" required class="form-input">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <p class="text-center" style="margin-top: 10px;">
+                        <a href="#" class="link">Forgot Password?</a>
+                    </p>
+                    <p class="text-center" style="margin-top: 20px;">
+                        Don't have an account? <span class="link" id="go-to-register" style="cursor: pointer;">Sign
+                            Up</span>
+                    </p>
+                </form>
+            </main>
+        </section>
+
+        <section id="register-screen" class="screen">
+            <header class="app-header">
+                <h1>SAFEWORK</h1>
+                <p class="subtitle">Create New Account</p>
+            </header>
+            <main class="form-content">
+                <form id="register-form">
+                    <div class="form-group">
+                        <label for="reg-name">Full Name</label>
+                        <input type="text" id="reg-name" placeholder="Enter full name" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-email">Email</label>
+                        <input type="email" id="reg-email" placeholder="Enter email" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-password">Password</label>
+                        <input type="password" id="reg-password" placeholder="Create password" required
+                            class="form-input">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Register</button>
+                    <p class="text-center" style="margin-top: 20px;">
+                        Already have an account? <span class="link" id="go-to-login"
+                            style="cursor: pointer;">Login</span>
+                    </p>
+                </form>
+            </main>
+        </section>
+
+
+        <section id="home-screen" class="screen">
+            <header class="app-header">
+                <button id="logout-btn" class="logout-btn" type="button">Logout</button>
+                <h1>SAFEWORK</h1>
+                <p id="user-greeting" class="subtitle"
+                    style="font-size: 18px; margin-bottom: 5px; color: #333; font-weight: bold;">Welcome</p>
+                <p class="subtitle">Women Safety & POSH Compliance</p>
+            </header>
+
+            <main class="main-content">
+                <button id="sos-btn-home" class="btn btn-sos-large pulse-animation">
+                    SOS
+                </button>
+
+                <button id="complaint-btn-home" class="btn btn-primary">
+                    Raise Complaint
+                </button>
+
+                <button id="status-btn-home" class="btn btn-secondary">
+                    Complaint Status
+                </button>
+
+                <button id="sos-history-btn-home" class="btn btn-secondary">
+                    SOS History
+                </button>
+            </main>
+        </section>
+
+        <section id="sos-screen" class="screen">
+            <div class="sos-container">
+                <button id="sos-btn-active" class="btn-sos-circle">
+                    SOS
+                </button>
+                <p class="sos-text">Tap for Emergency</p>
+                <div id="sos-status" class="hidden">
+                    <i class="fas fa-check-circle"></i>
+                    <p>SOS Alert Sent</p>
+                    <p class="sos-subtext">Help is on the way</p>
+                </div>
+                <button id="back-home-sos" class="btn btn-text">Cancel / Back</button>
+            </div>
+        </section>
+
+        <section id="complaint-screen" class="screen">
+            <header class="screen-header">
+                <button class="back-btn" data-target="home-screen"><i class="fas fa-arrow-left"></i></button>
+                <h2>Raise Complaint</h2>
+            </header>
+
+            <main class="form-content">
+                <form id="complaint-form">
+                    <div class="form-group">
+                        <label for="complaint-desc">Main Incident</label>
+                        <textarea id="complaint-desc" placeholder="Briefly describe the incident" required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="complaint-description">Detailed Description</label>
+                        <textarea id="complaint-description" placeholder="Add detailed explanation (optional)"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="complaint-email">Your Email</label>
+                        <input type="email" id="complaint-email" placeholder="Enter your email to receive updates" required class="form-input">
+                    </div>
+
+                    <div class="form-group file-upload">
+                        <label for="file-upload" class="file-label">
+                            <i class="fas fa-paperclip"></i> Attach Evidence (optional)
+                        </label>
+                        <input type="file" id="file-upload" hidden>
+                        <span id="file-name"
+                            style="display: block; margin-top: 5px; color: #757575; font-size: 14px;"></span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Submit Complaint</button>
+                </form>
+
+                <div id="complaint-success" class="success-message hidden">
+                    <i class="fas fa-check-circle"></i>
+                    <p>Complaint Submitted Successfully</p>
+                    <button class="btn btn-secondary" onclick="app.showScreen('home-screen')">Go Home</button>
+                </div>
+            </main>
+        </section>
+        <section id="status-screen" class="screen">
+            <header class="screen-header">
+                <button class="back-btn" data-target="home-screen"><i class="fas fa-arrow-left"></i></button>
+                <h2>Complaint Status</h2>
+            </header>
+
+            <main class="list-content">
+                <ul id="complaint-list" class="complaint-list">
+
+                    <li class="complaint-item">
+                        <div class="complaint-info">
+                            <span class="case-id">Case #1023</span>
+                            <span class="date">Oct 24, 2023</span>
+                        </div>
+                        <span class="status status-pending">Pending</span>
+                    </li>
+                    <li class="complaint-item">
+                        <div class="complaint-info">
+                            <span class="case-id">Case #1021</span>
+                            <span class="date">Sep 15, 2023</span>
+                        </div>
+                        <span class="status status-resolved">Resolved</span>
+                    </li>
+                </ul>
+            </main>
+        </section>
+
+        <section id="case-details-screen" class="screen">
+            <header class="screen-header">
+                <button class="back-btn" data-target="status-screen"><i class="fas fa-arrow-left"></i></button>
+                <h2>Case Details</h2>
+            </header>
+
+            <main class="list-content">
+                <div class="complaint-item complaint-detail-card">
+                    <div class="complaint-info" style="width:100%; gap:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <span id="detail-case-id" class="case-id">Case -</span>
+                            <span id="detail-status" class="status status-pending">Pending</span>
+                        </div>
+                        <span id="detail-date" class="date">-</span>
+
+                        <div>
+                            <strong>Incident</strong>
+                            <p id="detail-incident" class="date" style="margin-top:4px; color:#111827; font-size:.9rem;">-</p>
+                        </div>
+
+                        <div>
+                            <strong>Description</strong>
+                            <p id="detail-description" class="date" style="margin-top:4px; color:#111827; font-size:.9rem;">-</p>
+                        </div>
+
+                        <div>
+                            <strong>Attachment</strong>
+                            <div id="detail-attachment" class="date" style="margin-top:6px;">No attachment</div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </section>
+
+        <section id="sos-history-screen" class="screen">
+            <header class="screen-header">
+                <button class="back-btn" data-target="home-screen"><i class="fas fa-arrow-left"></i></button>
+                <h2>SOS History</h2>
+            </header>
+
+            <main class="list-content">
+                <ul id="sos-history-list" class="complaint-list">
+                    <li class="complaint-item">
+                        <div class="complaint-info">
+                            <span class="case-id">No SOS history yet</span>
+                            <span class="date">Trigger SOS to create entries</span>
+                        </div>
+                        <span class="status status-pending">-</span>
+                    </li>
+                </ul>
+            </main>
+        </section>
+    </div>
+
+    <button id="chatbot-fab" class="chatbot-fab" type="button" aria-label="Open help chat">
+        <i class="fas fa-comments"></i>
+    </button>
+
+    <div id="chatbot-panel" class="chatbot-panel hidden" aria-live="polite">
+        <div class="chatbot-header">
+            <strong>SAFEWORK Assistant</strong>
+            <button id="chatbot-close" type="button" class="chatbot-close">×</button>
+        </div>
+        <div id="chatbot-messages" class="chatbot-messages"></div>
+        <div class="chatbot-suggestions">
+            <button type="button" class="chatbot-suggestion" data-chat-action="sos">Trigger SOS</button>
+            <button type="button" class="chatbot-suggestion" data-chat-action="complaint">File Complaint</button>
+            <button type="button" class="chatbot-suggestion" data-chat-action="status">Track Status</button>
+        </div>
+        <form id="chatbot-form" class="chatbot-input-row">
+            <input id="chatbot-input" type="text" placeholder="Ask for help..." autocomplete="off" />
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <div id="global-loader" class="loader-overlay hidden">
+        <div class="loader-card">
+            <div class="loader-spinner"></div>
+            <p id="loader-text">Please wait...</p>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

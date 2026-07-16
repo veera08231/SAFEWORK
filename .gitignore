@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/
+safework-mobile.zip
+.expo/
+safework-mobile/node_modules/
+safework-mobile/.expo/

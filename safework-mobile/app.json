@@ -1,0 +1,73 @@
+{
+  "expo": {
+    "name": "SAFEWORK",
+    "slug": "safework-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#DC143C"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "SAFEWORK needs camera access to capture evidence during SOS",
+        "NSMicrophoneUsageDescription": "SAFEWORK needs microphone access to record audio evidence during SOS",
+        "NSLocationWhenInUseUsageDescription": "SAFEWORK needs location access to share your location during SOS",
+        "NSPhotoLibraryUsageDescription": "SAFEWORK needs photo library access to attach evidence"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#DC143C"
+      },
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "VIBRATE",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "package": "com.safework.app"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-location",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SAFEWORK needs camera access to capture evidence during SOS."
+        }
+      ],
+      "expo-splash-screen",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.25"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c7ca4a57-231f-42c7-8b8a-612ca793c400"
+      }
+    },
+    "owner": "veeraexe",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c7ca4a57-231f-42c7-8b8a-612ca793c400"
+    }
+  }
+}

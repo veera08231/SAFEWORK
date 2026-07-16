@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "SAFEWORK",
+    "slug": "safework-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "android": {
+      "package": "com.safework.app",
+      "permissions": ["CAMERA", "RECORD_AUDIO", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "VIBRATE"]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c7ca4a57-231f-42c7-8b8a-612ca793c400"
+      }
+    },
+    "owner": "veeraexe"
+  }
+}
