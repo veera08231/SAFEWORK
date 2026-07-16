@@ -1,6 +1,8 @@
 /* Navigation Logic */
-// Auto-detect backend server URL
-const API_BASE_URL = `http://${window.location.hostname || 'localhost'}:5000`;
+// Auto-detect: on Render the backend IS the same server, so use same origin. Locally, use :5000.
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? `http://${window.location.hostname}:5000`
+  : window.location.origin;
 
 const app = {
     init: function () {
