@@ -60,6 +60,22 @@ const SOSScreen = ({ user, navigation }) => {
     };
   }, [trackingInterval]);
 
+  // Request camera/mic permissions on mount so CameraView is ready
+  useEffect(() => {
+    (async () => {
+      try {
+        const { Camera } = require('expo-camera');
+        const camStatus = await Camera.requestCameraPermissionsAsync();
+        const micStatus = await Camera.requestMicrophonePermissionsAsync();
+        if (camStatus.status === 'granted' && micStatus.status === 'granted') {
+          setHasCameraPermission(true);
+        }
+      } catch (e) {
+        console.warn('Camera permission check failed:', e);
+      }
+    })();
+  }, []);
+
   const requestPermissions = async () => {
     const locStatus = await Location.requestForegroundPermissionsAsync();
     if (locStatus.status !== 'granted') {
@@ -71,14 +87,6 @@ const SOSScreen = ({ user, navigation }) => {
     if (audioStatus.status !== 'granted') {
       alert('Microphone permission is required for audio evidence');
       return false;
-    }
-
-    // Expo Camera v16+ permission request
-    const { Camera } = require('expo-camera');
-    const camStatus = await Camera.requestCameraPermissionsAsync();
-    const micStatus = await Camera.requestMicrophonePermissionsAsync();
-    if (camStatus.status === 'granted' && micStatus.status === 'granted') {
-      setHasCameraPermission(true);
     }
 
     return true;
@@ -116,9 +124,12 @@ const SOSScreen = ({ user, navigation }) => {
         await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
         await recording.startAsync();
         
-        // Start video recording if permitted
+        // Start video recording if permitted and mounted
         if (hasCameraPermission && cameraRef.current) {
+           console.log("Starting video recording...");
            videoPromise = cameraRef.current.recordAsync({ maxDuration: 8 });
+        } else {
+           console.warn("CameraRef is null or no permission. Camera mounted:", !!cameraRef.current);
         }
         
         setStatus('recording');
@@ -148,7 +159,10 @@ const SOSScreen = ({ user, navigation }) => {
             cameraRef.current.stopRecording();
             const videoResult = await videoPromise;
             if (videoResult && videoResult.uri) {
-              videoUri = videoResult.uri;
+              console.log("Video recording success:", videoResult.uri);
+              const dest = `${FileSystem.documentDirectory}sos_video_${Date.now()}.mp4`;
+              await FileSystem.moveAsync({ from: videoResult.uri, to: dest });
+              videoUri = dest;
             }
           }
         } catch (stopErr) {
