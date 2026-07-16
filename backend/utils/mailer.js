@@ -1,8 +1,14 @@
 const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 
 const user = process.env.EMAIL_USER || '';
 const pass = (process.env.EMAIL_PASS || '').trim();
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
+
+// Configure SendGrid if API key is available
+if (SENDGRID_API_KEY) {
+  sgMail.setApiKey(SENDGRID_API_KEY);
+}
 
 console.log('[Mailer] ===== EMAIL CONFIGURATION =====');
 console.log('[Mailer] EMAIL_USER:', user ? user : '❌ NOT SET');
@@ -11,174 +17,45 @@ console.log('[Mailer] SENDGRID_API_KEY:', SENDGRID_API_KEY ? '✅ Set (' + SENDG
 console.log('[Mailer] ALERT_EMAIL:', process.env.ALERT_EMAIL || '2k23cse176@kiot.ac.in (default)');
 console.log('[Mailer] ================================');
 
-// Try multiple SMTP configurations in sequence
+// SMTP configurations for Gmail (fallback)
 const SMTP_CONFIGS = [
-  // Config 1: Port 465 with SSL (SMTPS) — often works better on cloud hosts
-  {
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000
-  },
-  // Config 2: Port 587 with STARTTLS (standard)
-  {
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    auth: { user, pass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000
-  },
-  // Config 3: Try Google's alternative SMTP address
-  {
-    host: 'smtp.google.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000
-  }
+  { host: 'smtp.gmail.com', port: 465, secure: true },
+  { host: 'smtp.gmail.com', port: 587, secure: false },
+  { host: 'smtp.google.com', port: 465, secure: true }
 ];
 
+// Cache a working transporter
 let verifiedTransporter = null;
-let transporterVerified = false;
 
-// Pre-verify the best working transporter
+// Pre-verify SMTP transporter (non-blocking)
 async function initTransporter() {
-  if (!user || !pass) {
-    console.log('[Mailer] No credentials, skipping transporter init');
-    return;
-  }
+  if (!user || !pass) return;
 
   for (const cfg of SMTP_CONFIGS) {
     try {
-      console.log(`[Mailer] Testing SMTP ${cfg.host}:${cfg.port} (secure:${cfg.secure})...`);
-      const t = nodemailer.createTransport(cfg);
+      const t = nodemailer.createTransport({
+        ...cfg,
+        auth: { user, pass },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 15000
+      });
       await t.verify();
       console.log(`[Mailer] ✅ SMTP verified: ${cfg.host}:${cfg.port}`);
       verifiedTransporter = t;
-      transporterVerified = true;
       return;
     } catch (err) {
       console.log(`[Mailer] ❌ SMTP ${cfg.host}:${cfg.port} failed: ${err.message}`);
     }
   }
-  console.log('[Mailer] ❌ All SMTP configurations failed. Emails will not send via SMTP.');
+  console.log('[Mailer] ℹ️  No SMTP available — will use SendGrid or other methods');
 }
-
-// Initialize on startup (don't block)
 initTransporter();
 
-// Send via SendGrid HTTPS API (works on any host since it uses port 443)
-async function sendViaSendGrid(to, subject, text, html) {
-  if (!SENDGRID_API_KEY) return false;
-
-  try {
-    const https = require('https');
-
-    const data = JSON.stringify({
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: user || 'noreply@safework.app', name: 'SAFEWORK' },
-      subject: subject,
-      content: [
-        { type: 'text/plain', value: text || '' },
-        { type: 'text/html', value: html || text || '' }
-      ]
-    });
-
-    const options = {
-      hostname: 'api.sendgrid.com',
-      path: '/v3/mail/send',
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SENDGRID_API_KEY}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(data)
-      }
-    };
-
-    return new Promise((resolve) => {
-      const req = https.request(options, (res) => {
-        let body = '';
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => {
-          if (res.statusCode === 202 || res.statusCode === 200) {
-            console.log('[Mailer] ✅ Sent via SendGrid to:', to);
-            resolve(true);
-          } else {
-            console.error('[Mailer] ❌ SendGrid error:', res.statusCode, body.substring(0, 200));
-            resolve(false);
-          }
-        });
-      });
-
-      req.on('error', (err) => {
-        console.error('[Mailer] ❌ SendGrid network error:', err.message);
-        resolve(false);
-      });
-
-      req.write(data);
-      req.end();
-    });
-  } catch (err) {
-    console.error('[Mailer] ❌ SendGrid exception:', err.message);
-    return false;
-  }
-}
-
-// Send via Gmail HTTPS API (no SMTP needed, uses REST API)
-async function sendViaGmailAPI(to, subject, text, html) {
-  if (!user || !pass) return false;
-
-  try {
-    const https = require('https');
-
-    // Use SendGrid-compatible format via Google Workspace if available
-    // Fallback: use a simple HTTPS-based email API
-    const postData = JSON.stringify({
-      to,
-      subject,
-      text,
-      html,
-      from: user
-    });
-
-    const options = {
-      hostname: 'mail-api.googleapis.com',
-      path: '/gmail/v1/users/me/messages/send',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
-      }
-    };
-
-    return new Promise((resolve) => {
-      const req = https.request(options, (res) => {
-        let body = '';
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => {
-          // Gmail API requires OAuth2, so this will likely fail without proper setup
-          resolve(false);
-        });
-      });
-      req.on('error', () => resolve(false));
-      req.write(postData);
-      req.end();
-    });
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Send an email using available provider
+ * Send an email using the best available method:
+ * 1. SendGrid (HTTPS API - works everywhere)
+ * 2. Gmail SMTP (if available)
  */
 async function sendMail(options) {
   if (!options || !options.to) {
@@ -186,45 +63,87 @@ async function sendMail(options) {
     return null;
   }
 
-  // Try 1: Verified SMTP transporter (if available)
+  const { to, subject, text, html, attachments } = options;
+  const fromEmail = user || 'noreply@safework.app';
+  const fromName = 'SAFEWORK';
+
+  // ===== METHOD 1: SendGrid (primary - works on all hosts) =====
+  if (SENDGRID_API_KEY) {
+    try {
+      const msg = {
+        to,
+        from: { email: fromEmail, name: fromName },
+        subject,
+        text: text || '',
+        html: html || text || '',
+      };
+
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        msg.attachments = attachments.map(a => ({
+          filename: a.filename || 'attachment',
+          content: a.content ? a.content.toString('base64') : undefined,
+          path: a.path,
+          type: a.contentType,
+          disposition: 'attachment'
+        })).filter(a => a.content || a.path);
+      }
+
+      console.log('[Mailer] Sending via SendGrid ->', to, '| Subject:', subject);
+      const result = await sgMail.send(msg);
+      console.log('[Mailer] ✅ Sent via SendGrid! Status:', result[0]?.statusCode);
+      return { messageId: 'sg-' + Date.now(), provider: 'sendgrid' };
+    } catch (err) {
+      console.error('[Mailer] ❌ SendGrid failed:', err.message);
+      if (err.response) {
+        console.error('[Mailer] ❌ SendGrid response body:', err.response.body);
+      }
+    }
+  }
+
+  // ===== METHOD 2: Gmail SMTP (if transporter verified) =====
   if (verifiedTransporter) {
     try {
       const mailOptions = {
-        from: `"SAFEWORK" <${user}>`,
-        to: options.to,
-        subject: options.subject,
-        text: options.text,
-        html: options.html,
-        attachments: Array.isArray(options.attachments) ? options.attachments : []
+        from: `"${fromName}" <${fromEmail}>`,
+        to,
+        subject,
+        text: text || '',
+        html: html || text || '',
+        attachments: Array.isArray(attachments) ? attachments : []
       };
 
-      console.log('[Mailer] Sending via SMTP ->', options.to, '| Subject:', options.subject);
+      console.log('[Mailer] Sending via SMTP ->', to, '| Subject:', subject);
       const info = await verifiedTransporter.sendMail(mailOptions);
-      console.log('[Mailer] ✅ Email sent! MessageId:', info.messageId);
-      if (info.accepted?.length) console.log('[Mailer] ✅ Accepted:', info.accepted.join(', '));
+      console.log('[Mailer] ✅ Sent via SMTP! MessageId:', info.messageId);
       return info;
     } catch (err) {
       console.error('[Mailer] ❌ SMTP send failed:', err.message);
     }
   }
 
-  // Try 2: If no transporter verified yet, try all SMTP configs on-the-fly
+  // ===== METHOD 3: Try all SMTP configs on-the-fly =====
   if (user && pass) {
     for (const cfg of SMTP_CONFIGS) {
       try {
-        const t = nodemailer.createTransport(cfg);
+        const t = nodemailer.createTransport({
+          ...cfg,
+          auth: { user, pass },
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 15000
+        });
         const mailOptions = {
-          from: `"SAFEWORK" <${user}>`,
-          to: options.to,
-          subject: options.subject,
-          text: options.text,
-          html: options.html,
-          attachments: Array.isArray(options.attachments) ? options.attachments : []
+          from: `"${fromName}" <${fromEmail}>`,
+          to,
+          subject,
+          text: text || '',
+          html: html || text || '',
+          attachments: Array.isArray(attachments) ? attachments : []
         };
-        console.log(`[Mailer] Trying SMTP ${cfg.host}:${cfg.port} -> ${options.to}`);
+        console.log(`[Mailer] Trying SMTP ${cfg.host}:${cfg.port} -> ${to}`);
         const info = await t.sendMail(mailOptions);
         console.log('[Mailer] ✅ SMTP success on', cfg.host, '| MessageId:', info.messageId);
-        verifiedTransporter = t; // cache for next time
+        verifiedTransporter = t;
         return info;
       } catch (err) {
         console.log(`[Mailer] ❌ SMTP ${cfg.host}:${cfg.port} failed: ${err.message}`);
@@ -232,16 +151,11 @@ async function sendMail(options) {
     }
   }
 
-  // Try 3: SendGrid API
-  if (SENDGRID_API_KEY) {
-    console.log('[Mailer] Trying SendGrid API ->', options.to);
-    const sgResult = await sendViaSendGrid(options.to, options.subject, options.text, options.html);
-    if (sgResult) return { messageId: 'sendgrid-' + Date.now(), provider: 'sendgrid' };
+  console.error('[Mailer] ❌ All delivery methods failed for:', to);
+  if (!SENDGRID_API_KEY) {
+    console.error('[Mailer] ❌ Tip: Add SENDGRID_API_KEY to Render env vars for reliable delivery');
   }
-
-  console.error('[Mailer] ❌ All email delivery methods failed for:', options.to);
   return null;
 }
 
-// Also export the init function for retrying
-module.exports = { sendMail, initTransporter };
+module.exports = { sendMail };
