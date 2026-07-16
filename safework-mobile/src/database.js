@@ -161,6 +161,51 @@ export async function createSOSAlertWithAudio(userId, latitude, longitude, audio
   }
 }
 
+export async function createSOSAlertWithEvidence(userId, latitude, longitude, audioUri, videoUri) {
+  try {
+    const formData = new FormData();
+    formData.append('userId', userId);
+    formData.append('latitude', latitude);
+    formData.append('longitude', longitude);
+    
+    if (audioUri) {
+      formData.append('audio', {
+        uri: audioUri,
+        name: 'sos-audio.m4a',
+        type: 'audio/m4a'
+      });
+      formData.append('audioDurationSeconds', '8');
+    }
+
+    if (videoUri) {
+      formData.append('video', {
+        uri: videoUri,
+        name: 'sos-video.mp4',
+        type: 'video/mp4'
+      });
+      formData.append('videoDurationSeconds', '8');
+    }
+
+    const response = await fetch(`${API_URL}/sos`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Accept': 'application/json',
+      }
+    });
+    
+    const data = await response.json();
+    return {
+      success: response.ok,
+      sosId: data.sosId,
+      msg: data.msg || 'SOS Created'
+    };
+  } catch (err) {
+    console.error('Create SOS with evidence error:', err);
+    return { success: false, msg: 'Failed to create SOS alert' };
+  }
+}
+
 export async function getSOSHistoryByUserId(userId) {
   try {
     const response = await fetch(`${API_URL}/sos/history/${userId}`);

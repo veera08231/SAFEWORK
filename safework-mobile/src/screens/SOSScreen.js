@@ -10,14 +10,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import * as Camera from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import styles, { COLORS } from '../styles';
 import {
-  createSOSAlertWithAudio,
+  createSOSAlertWithEvidence,
   addTrackingUpdate,
-  saveEvidenceAudio,
 } from '../database';
 import { speak, vibrate } from '../utils';
 
@@ -27,6 +26,9 @@ const SOSScreen = ({ user, navigation }) => {
   const [sosId, setSosId] = useState(null);
   const [location, setLocation] = useState(null);
   const [trackingInterval, setTrackingInterval] = useState(null);
+  
+  const cameraRef = useRef(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -71,9 +73,12 @@ const SOSScreen = ({ user, navigation }) => {
       return false;
     }
 
-    const camStatus = await Camera.Camera.requestCameraPermissionsAsync();
-    if (camStatus.status !== 'granted') {
-      // Camera is optional, continue without it
+    // Expo Camera v16+ permission request
+    const { Camera } = require('expo-camera');
+    const camStatus = await Camera.requestCameraPermissionsAsync();
+    const micStatus = await Camera.requestMicrophonePermissionsAsync();
+    if (camStatus.status === 'granted' && micStatus.status === 'granted') {
+      setHasCameraPermission(true);
     }
 
     return true;
@@ -99,46 +104,65 @@ const SOSScreen = ({ user, navigation }) => {
         accuracy: Location.Accuracy.High,
       });
 
-      // Step 2: Start audio recording immediately
+      // Step 2: Start audio & video recording immediately
       let recording = null;
       let audioUri = null;
+      let videoUri = null;
+      let videoPromise = null;
+      
       try {
         await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
         recording = new Audio.Recording();
         await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
         await recording.startAsync();
+        
+        // Start video recording if permitted
+        if (hasCameraPermission && cameraRef.current) {
+           videoPromise = cameraRef.current.recordAsync({ maxDuration: 8 });
+        }
+        
         setStatus('recording');
         speak('Recording evidence', 500);
       } catch (recErr) {
-        console.warn('Audio recording not available:', recErr);
+        console.warn('Media recording not available:', recErr);
       }
 
       // Step 3: Wait for location
       const loc = await locPromise;
       setLocation(loc.coords);
 
-      // Step 4: Wait 8 seconds for audio evidence
-      if (recording) {
+      // Step 4: Wait 8 seconds for audio/video evidence
+      if (recording || videoPromise) {
         await new Promise(resolve => setTimeout(resolve, 8000));
         try {
-          await recording.stopAndUnloadAsync();
-          const uri = recording.getURI();
-          if (uri) {
-            const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
-            await FileSystem.moveAsync({ from: uri, to: dest });
-            audioUri = dest;
+          if (recording) {
+            await recording.stopAndUnloadAsync();
+            const uri = recording.getURI();
+            if (uri) {
+              const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
+              await FileSystem.moveAsync({ from: uri, to: dest });
+              audioUri = dest;
+            }
+          }
+          if (videoPromise && cameraRef.current) {
+            cameraRef.current.stopRecording();
+            const videoResult = await videoPromise;
+            if (videoResult && videoResult.uri) {
+              videoUri = videoResult.uri;
+            }
           }
         } catch (stopErr) {
           console.warn('Could not stop recording:', stopErr);
         }
       }
 
-      // Step 5: Send SOS + audio together in ONE request (so email has audio attached)
-      const result = await createSOSAlertWithAudio(
+      // Step 5: Send SOS + audio + video together in ONE request
+      const result = await createSOSAlertWithEvidence(
         user.userId,
         loc.coords.latitude,
         loc.coords.longitude,
-        audioUri
+        audioUri,
+        videoUri
       );
 
       if (result.success) {
@@ -251,6 +275,18 @@ const SOSScreen = ({ user, navigation }) => {
             <Text style={styles.sosCancelBtnText}>Cancel / Back</Text>
           </TouchableOpacity>
         </>
+      )}
+
+      {/* Hidden CameraView to record video evidence during SOS */}
+      {hasCameraPermission && (
+        <View style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 }}>
+          <CameraView 
+            ref={cameraRef}
+            mode="video"
+            facing="front"
+            style={{ flex: 1 }}
+          />
+        </View>
       )}
     </View>
   );
