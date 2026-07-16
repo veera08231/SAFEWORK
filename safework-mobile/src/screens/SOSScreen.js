@@ -15,11 +15,9 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import styles, { COLORS } from '../styles';
 import {
-  createSOSAlert,
+  createSOSAlertWithAudio,
   addTrackingUpdate,
   saveEvidenceAudio,
-  saveEvidenceVideo,
-  saveEvidenceImage,
 } from '../database';
 import { speak, vibrate } from '../utils';
 
@@ -96,17 +94,51 @@ const SOSScreen = ({ user, navigation }) => {
     vibrate(400);
 
     try {
-      const loc = await Location.getCurrentPositionAsync({
+      // Step 1: Get location and start recording SIMULTANEOUSLY
+      const locPromise = Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      setLocation(loc.coords);
-      setStatus('recording');
 
-      // Create SOS alert in database
-      const result = await createSOSAlert(
+      // Step 2: Start audio recording immediately
+      let recording = null;
+      let audioUri = null;
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        recording = new Audio.Recording();
+        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        await recording.startAsync();
+        setStatus('recording');
+        speak('Recording evidence', 500);
+      } catch (recErr) {
+        console.warn('Audio recording not available:', recErr);
+      }
+
+      // Step 3: Wait for location
+      const loc = await locPromise;
+      setLocation(loc.coords);
+
+      // Step 4: Wait 8 seconds for audio evidence
+      if (recording) {
+        await new Promise(resolve => setTimeout(resolve, 8000));
+        try {
+          await recording.stopAndUnloadAsync();
+          const uri = recording.getURI();
+          if (uri) {
+            const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
+            await FileSystem.moveAsync({ from: uri, to: dest });
+            audioUri = dest;
+          }
+        } catch (stopErr) {
+          console.warn('Could not stop recording:', stopErr);
+        }
+      }
+
+      // Step 5: Send SOS + audio together in ONE request (so email has audio attached)
+      const result = await createSOSAlertWithAudio(
         user.userId,
         loc.coords.latitude,
-        loc.coords.longitude
+        loc.coords.longitude,
+        audioUri
       );
 
       if (result.success) {
@@ -114,24 +146,20 @@ const SOSScreen = ({ user, navigation }) => {
         speak('SOS activated. Help is on the way.');
         setStatus('sent');
         setLoading(false);
-
-        // Start live tracking every 2 minutes
         startLiveTracking(result.sosId);
-
-        // Record evidence in background
-        recordAudioEvidence(result.sosId);
-        captureImageEvidence(result.sosId);
       } else {
         alert('Failed to send SOS. Please try again.');
         setStatus('idle');
         setLoading(false);
       }
     } catch (err) {
+      console.error('SOS flow error:', err);
       alert('Unable to retrieve your location');
       setStatus('idle');
       setLoading(false);
     }
   };
+
 
   const startLiveTracking = (alertSosId) => {
     const interval = setInterval(async () => {
@@ -151,41 +179,8 @@ const SOSScreen = ({ user, navigation }) => {
     setTrackingInterval(interval);
   };
 
-  const recordAudioEvidence = async (alertSosId) => {
-    try {
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      await recording.startAsync();
-
-      // Record for 15 seconds
-      setTimeout(async () => {
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI();
-        if (uri) {
-          // Copy to persistent storage
-          const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
-          await FileSystem.moveAsync({ from: uri, to: dest });
-          await saveEvidenceAudio(alertSosId, dest, 'audio/m4a', 15);
-        }
-      }, 15000);
-    } catch (err) {
-      console.warn('Audio recording failed:', err);
-    }
-  };
-
   const captureImageEvidence = async (alertSosId) => {
-    try {
-      const { status } = await Camera.Camera.requestCameraPermissionsAsync();
-      if (status !== 'granted') return;
-
-      // Use a simple approach - just mark we attempted
-      // For production, we'd use a custom camera component
-      speak('Camera capturing image', 500);
-    } catch (err) {
-      console.warn('Image capture failed:', err);
-    }
+    // Placeholder — no-op for now
   };
 
   const handleCancel = () => {
@@ -241,7 +236,7 @@ const SOSScreen = ({ user, navigation }) => {
       {status === 'recording' && (
         <>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.sosText}>Sending Alert...</Text>
+          <Text style={styles.sosText}>Recording Evidence...{"\n"}(8 seconds)</Text>
         </>
       )}
 
