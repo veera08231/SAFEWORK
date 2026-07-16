@@ -7,6 +7,7 @@ const { initDatabase } = require('./database');
 const authRoutes = require('./routes/authRoutes');
 const sosRoutes = require('./routes/sosRoutes');
 const complaintRoutes = require('./routes/complaintRoutes');
+const { sendMail } = require('./utils/mailer');
 
 const app = express();
 
@@ -22,6 +23,35 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
     next();
+});
+
+// Health check
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        EMAIL_USER: process.env.EMAIL_USER ? '✅ Set' : '❌ NOT SET',
+        EMAIL_PASS: process.env.EMAIL_PASS ? '✅ Set' : '❌ NOT SET',
+        ALERT_EMAIL: process.env.ALERT_EMAIL || '2k23cse176@kiot.ac.in (default)'
+    });
+});
+
+// Test email route
+app.get('/test-email', async (req, res) => {
+    try {
+        const result = await sendMail({
+            to: process.env.ALERT_EMAIL || '2k23cse176@kiot.ac.in',
+            subject: '✅ SAFEWORK - Test Email',
+            text: 'This is a test email from your SAFEWORK backend on Render. If you received this, emails are working!',
+            html: '<h2>✅ SAFEWORK Email Test</h2><p>This is a test email from your SAFEWORK backend on Render.</p><p>If you received this, <strong>emails are working correctly!</strong></p>'
+        });
+        if (result) {
+            res.json({ success: true, msg: 'Test email sent! Check your inbox at ' + (process.env.ALERT_EMAIL || '2k23cse176@kiot.ac.in') });
+        } else {
+            res.json({ success: false, msg: 'Email not sent. Check EMAIL_USER and EMAIL_PASS env variables on Render.' });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // Use Routes
