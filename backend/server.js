@@ -47,11 +47,33 @@ app.get('/test-email', async (req, res) => {
         if (result) {
             res.json({ success: true, msg: 'Test email sent! Check your inbox at ' + (process.env.ALERT_EMAIL || '2k23cse176@kiot.ac.in') });
         } else {
-            res.json({ success: false, msg: 'Email not sent. Check EMAIL_USER and EMAIL_PASS env variables on Render.' });
+            res.json({ success: false, msg: 'Email NOT sent. EMAIL_USER/EMAIL_PASS env vars on Render are likely incorrect. Use the /email-diagnostic endpoint to check.' });
         }
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
+});
+
+// Email diagnostic - shows what the env vars look like (without exposing full password)
+app.get('/email-diagnostic', (req, res) => {
+    const u = process.env.EMAIL_USER || '';
+    const p = process.env.EMAIL_PASS || '';
+    res.json({
+        email_user: u ? `${u.substring(0, 3)}***@${u.includes('@') ? u.split('@')[1] : '?'}` : 'NOT SET',
+        email_user_length: u.length,
+        email_user_has_at: u.includes('@'),
+        email_user_is_gmail: u.includes('gmail.com'),
+        email_pass_set: p.length > 0,
+        email_pass_length: p.length,
+        email_pass_has_spaces: p.includes(' '),
+        alert_email: process.env.ALERT_EMAIL || 'NOT SET',
+        sendgrid_key_set: !!process.env.SENDGRID_API_KEY,
+        instructions: {
+            gmail_app_password: 'EMAIL_PASS must be a 16-character App Password. Generate one at: https://myaccount.google.com/apppasswords',
+            two_factor_required: 'You MUST have 2FA enabled on your Google account to create App Passwords',
+            not_regular_password: 'Your regular Gmail password will NOT work. Only App Passwords are accepted.'
+        }
+    });
 });
 
 // Use Routes
