@@ -67,7 +67,7 @@ export async function submitComplaint(userId, incident, description, filePath, e
     const response = await fetch(`${API_URL}/complaints`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, incident, description, filePath })
+      body: JSON.stringify({ userId, incident, description, filePath, email })
     });
     const data = await response.json();
     return {

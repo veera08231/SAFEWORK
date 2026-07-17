@@ -28,18 +28,44 @@ const ChatbotScreen = ({ navigation }) => {
 
   const respondToChat = (input) => {
     const text = input.toLowerCase();
+    
+    // Simulate thinking delay for realism
+    setTimeout(() => {
+      let reply = '';
+      
+      // Greetings
+      if (text.match(/\\b(hi|hello|hey|namaste)\\b/)) {
+        reply = 'Hello! I am your SAFEWORK assistant. How can I help you stay safe today?';
+      } 
+      // Emergency / SOS
+      else if (text.match(/\\b(sos|emergency|help|danger|save me)\\b/)) {
+        reply = 'If you are in immediate danger, PLEASE PRESS THE RED SOS BUTTON immediately! It will record evidence and alert your emergency contacts.';
+      } 
+      // Harassment / POSH
+      else if (text.match(/\\b(posh|harassment|teasing|abuse|badly|misbehave)\\b/)) {
+        reply = 'I am so sorry you are facing this. Please go to the "Raise Complaint" section immediately. Your identity will be protected and action will be taken under POSH guidelines.';
+      }
+      // Status
+      else if (text.match(/\\b(status|track|where is my complaint)\\b/)) {
+        reply = 'You can track your existing complaints by clicking "Track Status" below or going to the Status screen from the home page.';
+      }
+      // Gratitude
+      else if (text.match(/\\b(thanks|thank you|ok|okay|good)\\b/)) {
+        reply = 'You are welcome! Stay safe. I am always here if you need assistance.';
+      }
+      // Generic conversational fallback
+      else {
+        const responses = [
+          "I understand. Your safety is our priority. Do you need to report an incident?",
+          "Okay, please let me know if you need to trigger an SOS or file a POSH complaint.",
+          "I have noted that. Is there anything specific you need help with regarding workplace safety?",
+          "Got it. Please remember you can use the SOS button anytime for immediate emergencies."
+        ];
+        reply = responses[Math.floor(Math.random() * responses.length)];
+      }
 
-    if (text.includes('sos')) {
-      appendMessage('Press SOS button or volume button 3 times for emergency', 'bot');
-    } else if (text.includes('complaint')) {
-      appendMessage('Go to complaint section and submit incident', 'bot');
-    } else if (text.includes('help')) {
-      appendMessage('You can trigger SOS or contact admin', 'bot');
-    } else if (text.includes('posh')) {
-      appendMessage('POSH handles workplace harassment complaints', 'bot');
-    } else {
-      appendMessage('I can help with SOS, Complaint, Help, and POSH.', 'bot');
-    }
+      appendMessage(reply, 'bot');
+    }, 600); // 600ms delay to feel natural
   };
 
   const handleSend = () => {
