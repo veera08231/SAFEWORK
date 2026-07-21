@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { CameraView } from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import styles, { COLORS } from '../styles';
@@ -19,9 +19,10 @@ import { speak, vibrate } from '../utils';
 
 const SOSScreen = ({ user, navigation }) => {
   const [status, setStatus] = useState('idle'); // idle | locating | recording | sending | sent
-  const [countdown, setCountdown] = useState(8);
+  const [countdown, setCountdown] = useState(6);
   const [trackingInterval, setTrackingInterval] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [hasPermissions, setHasPermissions] = useState(false);
 
   const cameraRef = useRef(null);
   const countdownRef = useRef(null);
@@ -61,29 +62,23 @@ const SOSScreen = ({ user, navigation }) => {
     };
   }, [trackingInterval]);
 
-  const requestPermissions = async () => {
-    const locStatus = await Location.requestForegroundPermissionsAsync();
-    if (locStatus.status !== 'granted') {
-      alert('Location permission is required for SOS.');
-      return false;
-    }
-    const audioStatus = await Audio.requestPermissionsAsync();
-    if (audioStatus.status !== 'granted') {
-      alert('Microphone permission is required for audio evidence.');
-      return false;
-    }
-    try {
-      const { Camera } = require('expo-camera');
-      await Camera.requestCameraPermissionsAsync();
-      await Camera.requestMicrophonePermissionsAsync();
-    } catch (e) { /* camera optional */ }
-    return true;
-  };
+  // Pre-request permissions on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        await Location.requestForegroundPermissionsAsync();
+        await Audio.requestPermissionsAsync();
+        const { Camera } = require('expo-camera');
+        await Camera.requestCameraPermissionsAsync();
+        await Camera.requestMicrophonePermissionsAsync();
+        setHasPermissions(true);
+      } catch (e) {
+        console.warn('Permission request error:', e);
+      }
+    })();
+  }, []);
 
   const startSOSFlow = async () => {
-    const ok = await requestPermissions();
-    if (!ok) return;
-
     vibrate(400);
     speak('Emergency SOS activated', 300);
 
@@ -99,82 +94,72 @@ const SOSScreen = ({ user, navigation }) => {
       return;
     }
 
-    // Step 2: Show camera & start recording
+    // Step 2: Show full-screen camera & start recording
     setStatus('recording');
-    setCountdown(8);
+    setCountdown(6);
     setShowCamera(true);
-    speak('Recording evidence', 200);
+    speak('Recording video evidence', 200);
 
     // Countdown timer
-    let secs = 8;
+    let secs = 6;
     countdownRef.current = setInterval(() => {
       secs -= 1;
       setCountdown(secs);
       if (secs <= 0) clearInterval(countdownRef.current);
     }, 1000);
 
-    // Give camera 1 second to fully mount before recording
-    await new Promise(r => setTimeout(r, 1000));
+    // Give CameraView 800ms to mount native preview surface
+    await new Promise(r => setTimeout(r, 800));
 
     let audioUri = null;
     let videoUri = null;
-    let audioRecording = null;
-    let videoPromise = null;
 
-    // Start audio recording
-    try {
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      audioRecording = new Audio.Recording();
-      await audioRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await audioRecording.startAsync();
-    } catch (e) {
-      console.warn('Audio recording failed:', e.message);
-    }
+    // Record video using CameraView (CameraView records video + audio natively)
+    if (cameraRef.current) {
+      try {
+        console.log('🎥 Starting CameraView recordAsync...');
+        const recordPromise = cameraRef.current.recordAsync({ maxDuration: 6 });
+        
+        // Wait 6 seconds for recording
+        await new Promise(r => setTimeout(r, 6000));
+        
+        try {
+          cameraRef.current.stopRecording();
+        } catch (_) {}
 
-    // Start video recording (camera is now visible and mounted)
-    try {
-      if (cameraRef.current) {
-        videoPromise = cameraRef.current.recordAsync({ maxDuration: 7 });
-        console.log('✅ Video recording started');
-      } else {
-        console.warn('⚠️ cameraRef is null');
+        const videoResult = await recordPromise;
+        if (videoResult && videoResult.uri) {
+          const dest = `${FileSystem.documentDirectory}sos_video_${Date.now()}.mp4`;
+          await FileSystem.moveAsync({ from: videoResult.uri, to: dest });
+          videoUri = dest;
+          console.log('✅ Video recorded successfully:', videoUri);
+        }
+      } catch (e) {
+        console.warn('❌ CameraView recordAsync failed:', e.message);
       }
-    } catch (e) {
-      console.warn('Video recording failed:', e.message);
+    } else {
+      console.warn('⚠️ cameraRef.current is null');
     }
 
-    // Wait 7 seconds for recording
-    await new Promise(r => setTimeout(r, 7000));
-
-    // Stop recordings
-    try {
-      if (audioRecording) {
+    // Fallback: If video failed, record a quick 4s audio recording
+    if (!videoUri) {
+      try {
+        console.log('🎙️ Video unavailable, starting audio fallback...');
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        const audioRecording = new Audio.Recording();
+        await audioRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        await audioRecording.startAsync();
+        await new Promise(r => setTimeout(r, 4000));
         await audioRecording.stopAndUnloadAsync();
         const uri = audioRecording.getURI();
         if (uri) {
           const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
           await FileSystem.moveAsync({ from: uri, to: dest });
           audioUri = dest;
-          console.log('✅ Audio saved:', audioUri);
         }
+      } catch (e) {
+        console.warn('Audio fallback failed:', e.message);
       }
-    } catch (e) {
-      console.warn('Audio stop failed:', e.message);
-    }
-
-    try {
-      if (videoPromise && cameraRef.current) {
-        cameraRef.current.stopRecording();
-        const result = await videoPromise;
-        if (result && result.uri) {
-          const dest = `${FileSystem.documentDirectory}sos_video_${Date.now()}.mp4`;
-          await FileSystem.moveAsync({ from: result.uri, to: dest });
-          videoUri = dest;
-          console.log('✅ Video saved:', videoUri);
-        }
-      }
-    } catch (e) {
-      console.warn('Video stop failed:', e.message);
     }
 
     // Hide camera overlay
@@ -182,7 +167,7 @@ const SOSScreen = ({ user, navigation }) => {
     setStatus('sending');
     speak('Sending alert now', 100);
 
-    // Step 3: Send SOS with evidence
+    // Step 3: Send SOS with video and/or audio evidence
     const result = await createSOSAlertWithEvidence(
       user.userId,
       coords.latitude,
@@ -246,7 +231,7 @@ const SOSScreen = ({ user, navigation }) => {
       {status === 'sending' && (
         <>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.sosText}>Uploading Evidence...{'\n'}Sending Alert</Text>
+          <Text style={styles.sosText}>Uploading Video Evidence...{'\n'}Sending Alert</Text>
         </>
       )}
 
@@ -264,19 +249,19 @@ const SOSScreen = ({ user, navigation }) => {
         </>
       )}
 
-      {/* ── CAMERA OVERLAY (full screen, shown only during recording) ── */}
+      {/* ── CAMERA OVERLAY (full screen visible during recording) ── */}
       {showCamera && (
         <View style={overlayStyles.fullScreenOverlay}>
           <CameraView
             ref={cameraRef}
             mode="video"
             facing="front"
+            mute={false}
             style={StyleSheet.absoluteFill}
           />
-          {/* Recording indicator on top */}
           <View style={overlayStyles.recordingBanner}>
             <Animated.View style={[overlayStyles.redDot, { opacity: recordingAnim }]} />
-            <Text style={overlayStyles.recordingText}>🔴 Recording Evidence — {countdown}s</Text>
+            <Text style={overlayStyles.recordingText}>🔴 Recording Video Evidence — {countdown}s</Text>
           </View>
           <Text style={overlayStyles.infoText}>
             This video will be attached to your emergency alert
@@ -298,7 +283,7 @@ const overlayStyles = StyleSheet.create({
   recordingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginTop: 40,
