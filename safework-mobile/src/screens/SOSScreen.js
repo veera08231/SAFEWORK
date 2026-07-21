@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,304 +6,325 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Platform,
+  StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import styles, { COLORS } from '../styles';
-import {
-  createSOSAlertWithEvidence,
-  addTrackingUpdate,
-} from '../database';
+import { createSOSAlertWithEvidence, addTrackingUpdate } from '../database';
 import { speak, vibrate } from '../utils';
 
 const SOSScreen = ({ user, navigation }) => {
-  const [status, setStatus] = useState('idle'); // idle, locating, recording, sent, cancelled
-  const [loading, setLoading] = useState(false);
-  const [sosId, setSosId] = useState(null);
-  const [location, setLocation] = useState(null);
+  const [status, setStatus] = useState('idle'); // idle | locating | recording | sending | sent
+  const [countdown, setCountdown] = useState(8);
   const [trackingInterval, setTrackingInterval] = useState(null);
-  
+  const [showCamera, setShowCamera] = useState(false);
+
   const cameraRef = useRef(null);
-  const [hasCameraPermission, setHasCameraPermission] = useState(false);
-
+  const countdownRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const recordingAnim = useRef(new Animated.Value(1)).current;
 
+  // Pulse animation for SOS button
   useEffect(() => {
-    // Pulse animation for SOS button
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ])
     );
     pulse.start();
     return () => pulse.stop();
   }, []);
 
+  // Recording dot blink animation
+  useEffect(() => {
+    if (status === 'recording') {
+      const blink = Animated.loop(
+        Animated.sequence([
+          Animated.timing(recordingAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+          Animated.timing(recordingAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        ])
+      );
+      blink.start();
+      return () => blink.stop();
+    }
+  }, [status]);
+
   useEffect(() => {
     return () => {
       if (trackingInterval) clearInterval(trackingInterval);
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, [trackingInterval]);
-
-  // Request camera/mic permissions on mount so CameraView is ready
-  useEffect(() => {
-    (async () => {
-      try {
-        const { Camera } = require('expo-camera');
-        const camStatus = await Camera.requestCameraPermissionsAsync();
-        const micStatus = await Camera.requestMicrophonePermissionsAsync();
-        if (camStatus.status === 'granted' && micStatus.status === 'granted') {
-          setHasCameraPermission(true);
-        }
-      } catch (e) {
-        console.warn('Camera permission check failed:', e);
-      }
-    })();
-  }, []);
 
   const requestPermissions = async () => {
     const locStatus = await Location.requestForegroundPermissionsAsync();
     if (locStatus.status !== 'granted') {
-      alert('Location permission is required for SOS');
+      alert('Location permission is required for SOS.');
       return false;
     }
-
     const audioStatus = await Audio.requestPermissionsAsync();
     if (audioStatus.status !== 'granted') {
-      alert('Microphone permission is required for audio evidence');
+      alert('Microphone permission is required for audio evidence.');
       return false;
     }
-
+    try {
+      const { Camera } = require('expo-camera');
+      await Camera.requestCameraPermissionsAsync();
+      await Camera.requestMicrophonePermissionsAsync();
+    } catch (e) { /* camera optional */ }
     return true;
   };
 
   const startSOSFlow = async () => {
-    if (loading) return;
-    setLoading(true);
+    const ok = await requestPermissions();
+    if (!ok) return;
 
-    const hasPermissions = await requestPermissions();
-    if (!hasPermissions) {
-      setLoading(false);
+    vibrate(400);
+    speak('Emergency SOS activated', 300);
+
+    // Step 1: Get location
+    setStatus('locating');
+    let coords;
+    try {
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      coords = pos.coords;
+    } catch (e) {
+      alert('Unable to get location. Please enable GPS and try again.');
+      setStatus('idle');
       return;
     }
 
-    setStatus('locating');
-    speak('Fetching Location', 500);
-    vibrate(400);
+    // Step 2: Show camera & start recording
+    setStatus('recording');
+    setCountdown(8);
+    setShowCamera(true);
+    speak('Recording evidence', 200);
+
+    // Countdown timer
+    let secs = 8;
+    countdownRef.current = setInterval(() => {
+      secs -= 1;
+      setCountdown(secs);
+      if (secs <= 0) clearInterval(countdownRef.current);
+    }, 1000);
+
+    // Give camera 1 second to fully mount before recording
+    await new Promise(r => setTimeout(r, 1000));
+
+    let audioUri = null;
+    let videoUri = null;
+    let audioRecording = null;
+    let videoPromise = null;
+
+    // Start audio recording
+    try {
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      audioRecording = new Audio.Recording();
+      await audioRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await audioRecording.startAsync();
+    } catch (e) {
+      console.warn('Audio recording failed:', e.message);
+    }
+
+    // Start video recording (camera is now visible and mounted)
+    try {
+      if (cameraRef.current) {
+        videoPromise = cameraRef.current.recordAsync({ maxDuration: 7 });
+        console.log('✅ Video recording started');
+      } else {
+        console.warn('⚠️ cameraRef is null');
+      }
+    } catch (e) {
+      console.warn('Video recording failed:', e.message);
+    }
+
+    // Wait 7 seconds for recording
+    await new Promise(r => setTimeout(r, 7000));
+
+    // Stop recordings
+    try {
+      if (audioRecording) {
+        await audioRecording.stopAndUnloadAsync();
+        const uri = audioRecording.getURI();
+        if (uri) {
+          const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
+          await FileSystem.moveAsync({ from: uri, to: dest });
+          audioUri = dest;
+          console.log('✅ Audio saved:', audioUri);
+        }
+      }
+    } catch (e) {
+      console.warn('Audio stop failed:', e.message);
+    }
 
     try {
-      // Step 1: Get location and start recording SIMULTANEOUSLY
-      const locPromise = Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      // Step 2: Start audio & video recording immediately
-      let recording = null;
-      let audioUri = null;
-      let videoUri = null;
-      let videoPromise = null;
-      
-      try {
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-        recording = new Audio.Recording();
-        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-        await recording.startAsync();
-        
-        // Start video recording if permitted and mounted
-        if (hasCameraPermission && cameraRef.current) {
-           console.log("Starting video recording...");
-           videoPromise = cameraRef.current.recordAsync({ maxDuration: 8 });
-        } else {
-           console.warn("CameraRef is null or no permission. Camera mounted:", !!cameraRef.current);
-        }
-        
-        setStatus('recording');
-        speak('Recording evidence', 500);
-      } catch (recErr) {
-        console.warn('Media recording not available:', recErr);
-      }
-
-      // Step 3: Wait for location
-      const loc = await locPromise;
-      setLocation(loc.coords);
-
-      // Step 4: Wait 8 seconds for audio/video evidence
-      if (recording || videoPromise) {
-        await new Promise(resolve => setTimeout(resolve, 8000));
-        try {
-          if (recording) {
-            await recording.stopAndUnloadAsync();
-            const uri = recording.getURI();
-            if (uri) {
-              const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
-              await FileSystem.moveAsync({ from: uri, to: dest });
-              audioUri = dest;
-            }
-          }
-          if (videoPromise && cameraRef.current) {
-            cameraRef.current.stopRecording();
-            const videoResult = await videoPromise;
-            if (videoResult && videoResult.uri) {
-              console.log("Video recording success:", videoResult.uri);
-              const dest = `${FileSystem.documentDirectory}sos_video_${Date.now()}.mp4`;
-              await FileSystem.moveAsync({ from: videoResult.uri, to: dest });
-              videoUri = dest;
-            }
-          }
-        } catch (stopErr) {
-          console.warn('Could not stop recording:', stopErr);
+      if (videoPromise && cameraRef.current) {
+        cameraRef.current.stopRecording();
+        const result = await videoPromise;
+        if (result && result.uri) {
+          const dest = `${FileSystem.documentDirectory}sos_video_${Date.now()}.mp4`;
+          await FileSystem.moveAsync({ from: result.uri, to: dest });
+          videoUri = dest;
+          console.log('✅ Video saved:', videoUri);
         }
       }
+    } catch (e) {
+      console.warn('Video stop failed:', e.message);
+    }
 
-      // Step 5: Send SOS + audio + video together in ONE request
-      const result = await createSOSAlertWithEvidence(
-        user.userId,
-        loc.coords.latitude,
-        loc.coords.longitude,
-        audioUri,
-        videoUri
-      );
+    // Hide camera overlay
+    setShowCamera(false);
+    setStatus('sending');
+    speak('Sending alert now', 100);
 
-      if (result.success) {
-        setSosId(result.sosId);
-        speak('SOS activated. Help is on the way.');
-        setStatus('sent');
-        setLoading(false);
-        startLiveTracking(result.sosId);
-      } else {
-        alert('Failed to send SOS. Please try again.');
-        setStatus('idle');
-        setLoading(false);
-      }
-    } catch (err) {
-      console.error('SOS flow error:', err);
-      alert('Unable to retrieve your location');
+    // Step 3: Send SOS with evidence
+    const result = await createSOSAlertWithEvidence(
+      user.userId,
+      coords.latitude,
+      coords.longitude,
+      audioUri,
+      videoUri
+    );
+
+    if (result.success) {
+      speak('SOS alert sent. Help is on the way.');
+      setStatus('sent');
+      startLiveTracking(result.sosId);
+    } else {
+      alert('Failed to send SOS. Check your internet connection.');
       setStatus('idle');
-      setLoading(false);
     }
   };
-
 
   const startLiveTracking = (alertSosId) => {
     const interval = setInterval(async () => {
       try {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        await addTrackingUpdate(
-          alertSosId,
-          loc.coords.latitude,
-          loc.coords.longitude
-        );
-      } catch (err) {
-        // Silently fail on tracking
-      }
-    }, 120000); // every 2 minutes
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        await addTrackingUpdate(alertSosId, loc.coords.latitude, loc.coords.longitude);
+      } catch (_) {}
+    }, 120000);
     setTrackingInterval(interval);
   };
 
-  const captureImageEvidence = async (alertSosId) => {
-    // Placeholder — no-op for now
-  };
-
-  const handleCancel = () => {
-    setStatus('idle');
-    setSosId(null);
-    setLocation(null);
-    if (trackingInterval) {
-      clearInterval(trackingInterval);
-      setTrackingInterval(null);
-    }
+  const handleBack = () => {
+    if (trackingInterval) clearInterval(trackingInterval);
+    if (countdownRef.current) clearInterval(countdownRef.current);
     navigation.goBack();
-  };
-
-  const handleCancelHome = () => {
-    if (status === 'sent') {
-      handleCancel();
-    }
   };
 
   return (
     <View style={styles.sosContainer}>
+      {/* ── IDLE ── */}
       {status === 'idle' && (
         <>
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-            <TouchableOpacity
-              style={[styles.btnSosCircle, loading && styles.btnDisabled]}
-              onPress={startSOSFlow}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator size="large" color={COLORS.white} />
-              ) : (
-                <Text style={{ color: COLORS.white, fontSize: 36, fontWeight: '800', letterSpacing: 2 }}>
-                  SOS
-                </Text>
-              )}
+            <TouchableOpacity style={styles.btnSosCircle} onPress={startSOSFlow}>
+              <Text style={{ color: COLORS.white, fontSize: 36, fontWeight: '800', letterSpacing: 2 }}>SOS</Text>
             </TouchableOpacity>
           </Animated.View>
           <Text style={styles.sosText}>Tap for Emergency</Text>
-          <TouchableOpacity style={styles.sosCancelBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.sosCancelBtn} onPress={handleBack}>
             <Text style={styles.sosCancelBtnText}>Cancel / Back</Text>
           </TouchableOpacity>
         </>
       )}
 
+      {/* ── LOCATING ── */}
       {status === 'locating' && (
         <>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.sosText}>Getting Location...</Text>
+          <Text style={styles.sosText}>Getting Location...{'\n'}Please wait</Text>
         </>
       )}
 
-      {status === 'recording' && (
+      {/* ── SENDING ── */}
+      {status === 'sending' && (
         <>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.sosText}>Recording Evidence...{"\n"}(8 seconds)</Text>
+          <Text style={styles.sosText}>Uploading Evidence...{'\n'}Sending Alert</Text>
         </>
       )}
 
+      {/* ── SENT ── */}
       {status === 'sent' && (
         <>
           <View style={styles.sosSuccessContainer}>
             <Ionicons name="checkmark-circle" size={64} color={COLORS.sosGreen} style={styles.sosSuccessIcon} />
-            <Text style={styles.sosSuccessText}>SOS Alert Sent</Text>
-            <Text style={styles.sosSubtext}>Help is on the way. You will get help soon.</Text>
+            <Text style={styles.sosSuccessText}>SOS Alert Sent ✅</Text>
+            <Text style={styles.sosSubtext}>Help is on the way. Stay safe.</Text>
           </View>
-          <TouchableOpacity onPress={handleCancelHome}>
-            <Text style={styles.sosCancelBtnText}>Cancel / Back</Text>
+          <TouchableOpacity onPress={handleBack}>
+            <Text style={styles.sosCancelBtnText}>Go Back Home</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {/* Hidden CameraView to record video evidence during SOS */}
-      {hasCameraPermission && (
-        <View style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 }}>
-          <CameraView 
+      {/* ── CAMERA OVERLAY (full screen, shown only during recording) ── */}
+      {showCamera && (
+        <View style={overlayStyles.fullScreenOverlay}>
+          <CameraView
             ref={cameraRef}
             mode="video"
             facing="front"
-            style={{ flex: 1 }}
+            style={StyleSheet.absoluteFill}
           />
+          {/* Recording indicator on top */}
+          <View style={overlayStyles.recordingBanner}>
+            <Animated.View style={[overlayStyles.redDot, { opacity: recordingAnim }]} />
+            <Text style={overlayStyles.recordingText}>🔴 Recording Evidence — {countdown}s</Text>
+          </View>
+          <Text style={overlayStyles.infoText}>
+            This video will be attached to your emergency alert
+          </Text>
         </View>
       )}
     </View>
   );
 };
+
+const overlayStyles = StyleSheet.create({
+  fullScreenOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#000',
+    zIndex: 9999,
+    justifyContent: 'space-between',
+  },
+  recordingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 40,
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    margin: 16,
+  },
+  redDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF0000',
+    marginRight: 8,
+  },
+  recordingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoText: {
+    color: '#ccc',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+  },
+});
 
 export default SOSScreen;
