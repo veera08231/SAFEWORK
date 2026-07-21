@@ -72,33 +72,35 @@ exports.createSOS = (req, res) => {
             db.execute('UPDATE sos_alerts SET video_path = ? WHERE id = ?', [videoUrl, sosId]);
         }
 
-        // Build attachments array
+        // Build attachments array — ONLY attach audio (video is too large, link instead)
         const attachments = [
-            buildAttachment(audioFile, 'sos-audio.webm'),
-            buildAttachment(videoFile, 'sos-video.webm')
+            buildAttachment(audioFile, 'sos-audio.m4a'),
         ].filter(Boolean);
 
-        // Send email alert with location + audio/video attachments
+        // Send email alert with location + audio attachment + video link
         const mapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
         const now = new Date().toLocaleString();
+        const videoUrl = videoFile
+            ? `${req.protocol}://${req.get('host')}/uploads/${videoFile.filename}`
+            : null;
         
         sendMail({
             to: ALERT_EMAIL,
             subject: '🚨 Emergency SOS Alert - SAFEWORK',
-            text: `EMERGENCY SOS ALERT\n\nUser is facing an emergency!\n\nUser Email: ${userEmail}\nLive Location: ${mapsLink}\nLatitude: ${latitude}\nLongitude: ${longitude}\nTimestamp: ${now}\n\n${audioFile ? 'Audio evidence attached' : ''}\n${videoFile ? 'Video evidence attached' : ''}`,
+            text: `EMERGENCY SOS ALERT\n\nUser: ${userEmail}\nLocation: ${mapsLink}\nTimestamp: ${now}\n${audioFile ? 'Audio evidence attached.' : ''}\n${videoUrl ? 'Video evidence: ' + videoUrl : ''}`,
             html: `
                 <h2 style="color:#DC143C;">🚨 EMERGENCY SOS ALERT</h2>
                 <p><strong>User is facing an emergency!</strong></p>
-                <table style="border-collapse:collapse;width:100%;max-width:500px;">
+                <table style="border-collapse:collapse;width:100%;max-width:540px;">
                     <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">User Email</td><td style="padding:8px;border:1px solid #ddd;">${userEmail}</td></tr>
                     <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Latitude</td><td style="padding:8px;border:1px solid #ddd;">${latitude}</td></tr>
                     <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Longitude</td><td style="padding:8px;border:1px solid #ddd;">${longitude}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Location</td><td style="padding:8px;border:1px solid #ddd;"><a href="${mapsLink}" target="_blank">Open in Google Maps</a></td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Location</td><td style="padding:8px;border:1px solid #ddd;"><a href="${mapsLink}" target="_blank">📍 Open in Google Maps</a></td></tr>
                     <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Timestamp</td><td style="padding:8px;border:1px solid #ddd;">${now}</td></tr>
-                    ${audioFile ? `<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Audio Evidence</td><td style="padding:8px;border:1px solid #ddd;">Attached (${(audioFile.size / 1024).toFixed(1)} KB)</td></tr>` : ''}
-                    ${videoFile ? `<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Video Evidence</td><td style="padding:8px;border:1px solid #ddd;">Attached (${(videoFile.size / 1024 / 1024).toFixed(1)} MB)</td></tr>` : ''}
+                    ${audioFile ? `<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">🎤 Audio Evidence</td><td style="padding:8px;border:1px solid #ddd;">Attached to this email (${(audioFile.size/1024).toFixed(1)} KB)</td></tr>` : ''}
+                    ${videoUrl ? `<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">📹 Video Evidence</td><td style="padding:8px;border:1px solid #ddd;"><a href="${videoUrl}" target="_blank" style="background:#DC143C;color:#fff;padding:6px 14px;border-radius:6px;text-decoration:none;font-weight:bold;">▶ Watch / Download Video</a></td></tr>` : '<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">📹 Video Evidence</td><td style="padding:8px;border:1px solid #ddd;">Not captured</td></tr>'}
                 </table>
-                <p style="margin-top:20px;color:#666;">This is an automated alert from SAFEWORK app.</p>
+                <p style="margin-top:20px;color:#666;font-size:12px;">This is an automated alert from SAFEWORK app.</p>
             `,
             attachments
         });

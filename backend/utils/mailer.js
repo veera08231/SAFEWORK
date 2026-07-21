@@ -13,14 +13,15 @@ console.log('[Mailer] ALERT_EMAIL:', ALERT_EMAIL);
 
 /**
  * Convert file path to base64 for Resend attachment
+ * Only attach AUDIO files — video files are too large, they go as links
  */
 function fileToBase64(filePath) {
     try {
         if (!filePath || !fs.existsSync(filePath)) return null;
         const buffer = fs.readFileSync(filePath);
-        // Resend attachment limit is 40MB — skip if too large
-        if (buffer.length > 38 * 1024 * 1024) {
-            console.warn('[Mailer] Attachment too large, skipping:', filePath);
+        // Only attach if under 5MB (audio only)
+        if (buffer.length > 5 * 1024 * 1024) {
+            console.warn('[Mailer] File too large to attach (>5MB), skipping attachment:', filePath);
             return null;
         }
         return buffer.toString('base64');
