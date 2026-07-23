@@ -19,9 +19,9 @@ function fileToBase64(filePath) {
     try {
         if (!filePath || !fs.existsSync(filePath)) return null;
         const buffer = fs.readFileSync(filePath);
-        // Only attach if under 5MB (audio only)
-        if (buffer.length > 5 * 1024 * 1024) {
-            console.warn('[Mailer] File too large to attach (>5MB), skipping attachment:', filePath);
+        // Attach files up to 15MB
+        if (buffer.length > 15 * 1024 * 1024) {
+            console.warn('[Mailer] File too large to attach (>15MB), skipping attachment:', filePath);
             return null;
         }
         return buffer.toString('base64');

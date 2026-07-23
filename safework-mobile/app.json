@@ -44,7 +44,9 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "SAFEWORK needs camera access to capture evidence during SOS."
+          "cameraPermission": "SAFEWORK needs camera access to capture evidence during SOS.",
+          "microphonePermission": "SAFEWORK needs microphone access to record audio evidence during SOS.",
+          "recordAudioAndroid": true
         }
       ],
       "expo-splash-screen",

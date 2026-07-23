@@ -72,9 +72,10 @@ exports.createSOS = (req, res) => {
             db.execute('UPDATE sos_alerts SET video_path = ? WHERE id = ?', [videoUrl, sosId]);
         }
 
-        // Build attachments array — ONLY attach audio (video is too large, link instead)
+        // Build attachments array for email (both audio & video if available)
         const attachments = [
             buildAttachment(audioFile, 'sos-audio.m4a'),
+            buildAttachment(videoFile, 'sos-video.mp4')
         ].filter(Boolean);
 
         // Send email alert with location + audio attachment + video link

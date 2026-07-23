@@ -164,27 +164,31 @@ export async function createSOSAlertWithAudio(userId, latitude, longitude, audio
 export async function createSOSAlertWithEvidence(userId, latitude, longitude, audioUri, videoUri) {
   try {
     const formData = new FormData();
-    formData.append('userId', userId);
-    formData.append('latitude', latitude);
-    formData.append('longitude', longitude);
+    formData.append('userId', String(userId || 'guest'));
+    formData.append('latitude', String(latitude));
+    formData.append('longitude', String(longitude));
     
     if (audioUri) {
+      const cleanAudioUri = audioUri.startsWith('file://') ? audioUri : `file://${audioUri}`;
       formData.append('audio', {
-        uri: audioUri,
-        name: 'sos-audio.m4a',
+        uri: cleanAudioUri,
+        name: `sos-audio-${Date.now()}.m4a`,
         type: 'audio/m4a'
       });
-      formData.append('audioDurationSeconds', '8');
+      formData.append('audioDurationSeconds', '6');
     }
 
     if (videoUri) {
+      const cleanVideoUri = videoUri.startsWith('file://') ? videoUri : `file://${videoUri}`;
       formData.append('video', {
-        uri: videoUri,
-        name: 'sos-video.mp4',
+        uri: cleanVideoUri,
+        name: `sos-video-${Date.now()}.mp4`,
         type: 'video/mp4'
       });
-      formData.append('videoDurationSeconds', '8');
+      formData.append('videoDurationSeconds', '6');
     }
+
+    console.log('Sending SOS with evidence to backend:', `${API_URL}/sos`, { audioUri, videoUri });
 
     const response = await fetch(`${API_URL}/sos`, {
       method: 'POST',

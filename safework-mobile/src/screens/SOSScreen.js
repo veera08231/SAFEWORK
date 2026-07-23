@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { CameraView, requestCameraPermissionsAsync, requestMicrophonePermissionsAsync } from 'expo-camera';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import styles, { COLORS } from '../styles';
@@ -68,9 +68,8 @@ const SOSScreen = ({ user, navigation }) => {
       try {
         await Location.requestForegroundPermissionsAsync();
         await Audio.requestPermissionsAsync();
-        const { Camera } = require('expo-camera');
-        await Camera.requestCameraPermissionsAsync();
-        await Camera.requestMicrophonePermissionsAsync();
+        await requestCameraPermissionsAsync();
+        await requestMicrophonePermissionsAsync();
         setHasPermissions(true);
       } catch (e) {
         console.warn('Permission request error:', e);
@@ -118,20 +117,9 @@ const SOSScreen = ({ user, navigation }) => {
     if (cameraRef.current) {
       try {
         console.log('🎥 Starting CameraView recordAsync...');
-        const recordPromise = cameraRef.current.recordAsync({ maxDuration: 6 });
-        
-        // Wait 6 seconds for recording
-        await new Promise(r => setTimeout(r, 6000));
-        
-        try {
-          cameraRef.current.stopRecording();
-        } catch (_) {}
-
-        const videoResult = await recordPromise;
+        const videoResult = await cameraRef.current.recordAsync({ maxDuration: 6 });
         if (videoResult && videoResult.uri) {
-          const dest = `${FileSystem.documentDirectory}sos_video_${Date.now()}.mp4`;
-          await FileSystem.moveAsync({ from: videoResult.uri, to: dest });
-          videoUri = dest;
+          videoUri = videoResult.uri;
           console.log('✅ Video recorded successfully:', videoUri);
         }
       } catch (e) {
@@ -153,9 +141,7 @@ const SOSScreen = ({ user, navigation }) => {
         await audioRecording.stopAndUnloadAsync();
         const uri = audioRecording.getURI();
         if (uri) {
-          const dest = `${FileSystem.documentDirectory}sos_audio_${Date.now()}.m4a`;
-          await FileSystem.moveAsync({ from: uri, to: dest });
-          audioUri = dest;
+          audioUri = uri;
         }
       } catch (e) {
         console.warn('Audio fallback failed:', e.message);
@@ -169,7 +155,7 @@ const SOSScreen = ({ user, navigation }) => {
 
     // Step 3: Send SOS with video and/or audio evidence
     const result = await createSOSAlertWithEvidence(
-      user.userId,
+      user?.userId || 'guest',
       coords.latitude,
       coords.longitude,
       audioUri,
